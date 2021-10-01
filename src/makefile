@@ -8,7 +8,7 @@ CC = gcc
 CFLAGS = -lm -pthread -march=native -Wall -funroll-loops -Wno-unused-result -Wshadow
 
 ifeq ($(debug), 1)
-	CFLAGS += -g -Og
+	CFLAGS += -g -O0
 else
 	CFLAGS += -O3
 endif
