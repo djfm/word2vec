@@ -200,19 +200,31 @@ void ReduceVocab() {
 }
 
 // Create binary Huffman tree using the word counts
-// Frequent words will have short uniqe binary codes
+// Frequent words will have short unique binary codes
 void CreateBinaryTree() {
-  long long a, b, i, min1i, min2i, pos1, pos2, point[MAX_CODE_LENGTH];
-  char code[MAX_CODE_LENGTH];
-  long long *count = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
+  long long point[MAX_CODE_LENGTH];
   long long *binary = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
   long long *parent_node = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
-  for (a = 0; a < vocab_size; a++) count[a] = vocab[a].cn;
-  for (a = vocab_size; a < vocab_size * 2; a++) count[a] = 1e15;
-  pos1 = vocab_size - 1;
-  pos2 = vocab_size;
-  // Following algorithm constructs the Huffman tree by adding one node at a time
-  for (a = 0; a < vocab_size - 1; a++) {
+
+  long long *count = (long long *)calloc(vocab_size * 2 + 1, sizeof(long long));
+
+  for (long long a = 0; a < vocab_size; a++) {
+    count[a] = vocab[a].cn;
+  }
+
+  for (long long a = vocab_size; a < vocab_size * 2; a++) {
+    count[a] = 1e15;
+  }
+
+  // Following algorithm constructs the Huffman tree
+  // by adding one node at a time
+
+  long long pos1 = vocab_size - 1;
+  long long pos2 = vocab_size;
+
+  for (long long a = 0; a < vocab_size - 1; a++) {
+    long long min1i, min2i;
+
     // First, find two smallest nodes 'min1, min2'
     if (pos1 >= 0) {
       if (count[pos1] < count[pos2]) {
@@ -238,29 +250,35 @@ void CreateBinaryTree() {
       min2i = pos2;
       pos2++;
     }
+
     count[vocab_size + a] = count[min1i] + count[min2i];
     parent_node[min1i] = vocab_size + a;
     parent_node[min2i] = vocab_size + a;
     binary[min2i] = 1;
   }
+
   // Now assign binary code to each vocabulary word
-  for (a = 0; a < vocab_size; a++) {
-    b = a;
-    i = 0;
-    while (1) {
+
+  char code[MAX_CODE_LENGTH];
+
+  for (long long a = 0; a < vocab_size; a++) {
+    long long i = 0;
+
+    for (long long b = a; b < vocab_size * 2 - 2; b = parent_node[b]) {
       code[i] = binary[b];
       point[i] = b;
       i++;
-      b = parent_node[b];
-      if (b == vocab_size * 2 - 2) break;
     }
+
     vocab[a].codelen = i;
     vocab[a].point[0] = vocab_size - 2;
-    for (b = 0; b < i; b++) {
+
+    for (long long b = 0; b < i; b++) {
       vocab[a].code[i - b - 1] = code[b];
       vocab[a].point[i - b] = point[b] - vocab_size;
     }
   }
+
   free(count);
   free(binary);
   free(parent_node);
