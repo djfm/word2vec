@@ -11,11 +11,17 @@
       "request": "launch",
       "program": "${workspaceFolder}/bin/word2vec",
       "args": [
-        "-train", "data/aclImdbPosSentences.txt",
-        "-output", "aclImdbPos.txt",
-        "-size", "100",
-        "-cbow", "0",
-        "-iter", "10"
+        "-train", "data/text8",
+        "-output", "data/text8-vector.bin",
+        "-size", "200",
+        "-cbow", "1",
+        "-window", "8",
+        "-negative", "25",
+        "-hs", "0",
+        "-sample", "1e-4",
+        "-threads", "20",
+        "-iter", "15",
+        "-binary", "1"
       ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
