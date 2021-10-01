@@ -627,31 +627,48 @@ void TrainModel() {
   FILE *fo;
   printf("Starting training using file %s\n", train_file);
   starting_alpha = alpha;
-  if (read_vocab_file[0] != 0) ReadVocab(); else LearnVocabFromTrainFile();
-  if (save_vocab_file[0] != 0) SaveVocab();
-  if (output_file[0] == 0) return;
+
+  if (read_vocab_file[0] != 0) {
+    ReadVocab();
+  } else {
+    LearnVocabFromTrainFile();
+  }
+
+  if (save_vocab_file[0] != 0) {
+    SaveVocab();
+  }
+
+  if (output_file[0] == 0) {
+    return;
+  }
+
   InitNet();
-  if (negative > 0) InitUnigramTable();
+
+  if (negative > 0) {
+    InitUnigramTable();
+  }
+
   start = clock();
 
-#ifdef _MSC_VER
-	HANDLE *pt = (HANDLE *)malloc(num_threads * sizeof(HANDLE));
-	for (int i = 0; i < num_threads; i++){
-		pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, (void *)i, 0, NULL);
-	}
-	WaitForMultipleObjects(num_threads, pt, TRUE, INFINITE);
-	for (int i = 0; i < num_threads; i++){
-		CloseHandle(pt[i]);
-	}
-	free(pt);
-#elif defined  linux
-  pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
-  for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
-  for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
-  free(pt);
-#endif
+  #ifdef _MSC_VER
+    HANDLE *pt = (HANDLE *)malloc(num_threads * sizeof(HANDLE));
+    for (int i = 0; i < num_threads; i++){
+      pt[i] = (HANDLE)_beginthreadex(NULL, 0, TrainModelThread_win, (void *)i, 0, NULL);
+    }
+    WaitForMultipleObjects(num_threads, pt, TRUE, INFINITE);
+    for (int i = 0; i < num_threads; i++){
+      CloseHandle(pt[i]);
+    }
+    free(pt);
+  #elif defined  linux
+    pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
+    for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
+    for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
+    free(pt);
+  #endif
 
   fo = fopen(output_file, "wb");
+
   if (classes == 0) {
     // Save the word vectors
     fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
