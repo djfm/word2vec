@@ -343,41 +343,71 @@ void ReadVocab() {
 }
 
 void InitNet() {
-  long long a, b;
-  unsigned long long next_random = 1;
+  #ifdef _MSC_VER
+    syn0 = _aligned_malloc((long long)vocab_size * layer1_size * sizeof(real), 128);
+  #elif defined linux
+    // layer1_size is the embedding size, obtained by the -size command line argument
+    // and defaulting to 100
+    // this allocates a matrix syn0 of vocab_size * layer1_size reals
+    posix_memalign((void **)&syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
+  #endif
 
-#ifdef _MSC_VER
-  syn0 = _aligned_malloc((long long)vocab_size * layer1_size * sizeof(real), 128);
-#elif defined  linux
-  a = posix_memalign((void **)&syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
-#endif
+  if (syn0 == NULL) {
+    printf("Memory allocation failed\n"); exit(1);
+  }
 
-  if (syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
+  // hs: hierarchical softmax
   if (hs) {
-#ifdef _MSC_VER
-	  syn1 = _aligned_malloc((long long)vocab_size * layer1_size * sizeof(real), 128);
-#elif defined  linux
-	  a = posix_memalign((void **)&syn1, 128, (long long)vocab_size * layer1_size * sizeof(real));
-#endif    
-    if (syn1 == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
-     syn1[a * layer1_size + b] = 0;
+    #ifdef _MSC_VER
+      syn1 = _aligned_malloc((long long)vocab_size * layer1_size * sizeof(real), 128);
+    #elif defined  linux
+      // allocate another matrix syn1 of vocab_size * layer1_size reals
+      posix_memalign((void **)&syn1, 128, (long long)vocab_size * layer1_size * sizeof(real));
+    #endif
+
+    if (syn1 == NULL) {
+      printf("Memory allocation failed\n"); exit(1);
+    }
+
+    for (long long a = 0; a < vocab_size; a++) {
+      for (long long b = 0; b < layer1_size; b++) {
+        syn1[a * layer1_size + b] = 0;
+      }
+    }
   }
-  if (negative>0) {
-#ifdef _MSC_VER
-	  syn1neg = _aligned_malloc((long long)vocab_size * layer1_size * sizeof(real), 128);
-#elif defined  linux
-	  a = posix_memalign((void **)&syn1neg, 128, (long long)vocab_size * layer1_size * sizeof(real));
-#endif
-    
-    if (syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
-     syn1neg[a * layer1_size + b] = 0;
+
+  if ( negative > 0) {
+    // number of negative examples to sample
+
+    #ifdef _MSC_VER
+      syn1neg = _aligned_malloc((long long)vocab_size * layer1_size * sizeof(real), 128);
+    #elif defined  linux
+      // allocate another matrix syn1neg of vocab_size * layer1_size reals
+      posix_memalign((void **)&syn1neg, 128, (long long)vocab_size * layer1_size * sizeof(real));
+    #endif
+
+    if (syn1neg == NULL) {
+      printf("Memory allocation failed\n");
+      exit(1);
+    }
+
+    for (long long a = 0; a < vocab_size; a++) {
+      for (long long b = 0; b < layer1_size; b++) {
+        syn1neg[a * layer1_size + b] = 0;
+      }
+    }
   }
-  for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++) {
-    next_random = next_random * (unsigned long long)25214903917 + 11;
-    syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
+
+  unsigned long long next_random = 1;
+  for (long long a = 0; a < vocab_size; a++) {
+    for (long long b = 0; b < layer1_size; b++) {
+      next_random = next_random * (unsigned long long)25214903917 + 11;
+      // initialize hidden layer weights with random values between -0.5 and 0.5
+      // that, on average, sum up to one for each row
+      syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)0x10000) - 0.5) / layer1_size;
+    }
   }
+
   CreateBinaryTree();
 }
 
@@ -562,7 +592,7 @@ void *TrainModelThread(void *id) {
   free(neu1e);
 #ifdef _MSC_VER
 _endthreadex(0);
-#elif defined  linux 
+#elif defined  linux
   pthread_exit(NULL);
 #endif
 }
@@ -585,7 +615,7 @@ void TrainModel() {
   InitNet();
   if (negative > 0) InitUnigramTable();
   start = clock();
-  
+
 #ifdef _MSC_VER
 	HANDLE *pt = (HANDLE *)malloc(num_threads * sizeof(HANDLE));
 	for (int i = 0; i < num_threads; i++){
@@ -596,7 +626,7 @@ void TrainModel() {
 		CloseHandle(pt[i]);
 	}
 	free(pt);
-#elif defined  linux 
+#elif defined  linux
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
   for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
   for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
