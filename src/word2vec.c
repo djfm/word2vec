@@ -105,14 +105,26 @@ int GetWordHash(char *word) {
   return hash;
 }
 
-// Returns position of a word in the vocabulary; if the word is not found, returns -1
+// Returns position of a word in the vocabulary;
+// if the word is not found, returns -1
 int SearchVocab(char *word) {
   unsigned int hash = GetWordHash(word);
   while (1) {
-    if (vocab_hash[hash] == -1) return -1;
-    if (!strcmp(word, vocab[vocab_hash[hash]].word)) return vocab_hash[hash];
+    if (vocab_hash[hash] == -1) {
+      return -1;
+    }
+
+    // strcmp is misleading, the following actually checks
+    // whether word is equal to vocab[vocab_hash[hash]].word,
+    // that is, whether the hash for word is indeed associated
+    // with word
+    if (strcmp(word, vocab[vocab_hash[hash]].word) == 0) {
+      return vocab_hash[hash];
+    }
+
     hash = (hash + 1) % vocab_hash_size;
   }
+
   return -1;
 }
 
@@ -430,18 +442,25 @@ void InitNet() {
 }
 
 void *TrainModelThread(void *id) {
-  long long a, b, d, cw, word, last_word, sentence_length = 0, sentence_position = 0;
+  long long a, b, d, cw, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
   long long l1, l2, c, target, label, local_iter = iter;
   unsigned long long next_random = (long long)id;
   real f, g;
   clock_t now;
+
+
+  // I believe these are used to store activations of neurons
   real *neu1 = (real *)calloc(layer1_size, sizeof(real));
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
+
   FILE *fi = fopen(train_file, "rb");
   fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
+
   while (1) {
+    // reduce the learning rate alpha every 10,000 words processed
     if (word_count - last_word_count > 10000) {
+      // not thread-safe, I believe
       word_count_actual += word_count - last_word_count;
       last_word_count = word_count;
       if ((debug_mode > 1)) {
@@ -454,39 +473,85 @@ void *TrainModelThread(void *id) {
       alpha = starting_alpha * (1 - word_count_actual / (real)(iter * train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
+
+    // build a sentence
     if (sentence_length == 0) {
       while (1) {
-        word = ReadWordIndex(fi);
-        if (feof(fi)) break;
-        if (word == -1) continue;
-        word_count++;
-        if (word == 0) break;
-        // The subsampling randomly discards frequent words while keeping the ranking same
-        if (sample > 0) {
-          real ran = (sqrt(vocab[word].cn / (sample * train_words)) + 1) * (sample * train_words) / vocab[word].cn;
-          next_random = next_random * (unsigned long long)25214903917 + 11;
-          if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+        long long word = ReadWordIndex(fi);
+
+        if (feof(fi)) {
+          // end of file, note that this check is useless
+          // because word will be -1 in this case
+          break;
         }
+
+        if (word == -1) {
+          // word not in vocabulary
+          continue;
+        }
+
+        word_count++;
+
+        if (word == 0) {
+          // sentence end, i.e. special delimiter "</s>"
+          // encountered, inserted in place of newlines
+          // in the input file
+          break;
+        }
+
+        // The subsampling randomly discards frequent words
+        // while keeping the ranking same - this is the -sample command line arg,
+        // and defaults to 0.001
+        if (sample > 0) {
+          real f = vocab[word].cn / (sample * train_words);
+          real ran = (sqrt(f) + 1) / f;
+          next_random = next_random * (unsigned long long)25214903917 + 11;
+          if (ran < (next_random & 0xFFFF) / (real)0x10000) {
+            continue;
+          }
+        }
+
         sen[sentence_length] = word;
         sentence_length++;
-        if (sentence_length >= MAX_SENTENCE_LENGTH) break;
+
+        if (sentence_length >= MAX_SENTENCE_LENGTH) {
+          break;
+        }
       }
       sentence_position = 0;
     }
+
+    // check whether this thread's iteration is done
     if (feof(fi) || (word_count > train_words / num_threads)) {
       word_count_actual += word_count - last_word_count;
       local_iter--;
-      if (local_iter == 0) break;
+
+      if (local_iter == 0) {
+        break;
+      }
+
       word_count = 0;
       last_word_count = 0;
       sentence_length = 0;
+
       fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
       continue;
     }
-    word = sen[sentence_position];
-    if (word == -1) continue;
-    for (c = 0; c < layer1_size; c++) neu1[c] = 0;
-    for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+
+    long long word = sen[sentence_position];
+
+    if (word == -1) {
+      continue;
+    }
+
+    for (c = 0; c < layer1_size; c++) {
+      neu1[c] = 0;
+    }
+
+    for (c = 0; c < layer1_size; c++) {
+      neu1e[c] = 0;
+    }
+
     next_random = next_random * (unsigned long long)25214903917 + 11;
     b = next_random % window;
     if (cbow) {  //train the cbow architecture
@@ -604,6 +669,8 @@ void *TrainModelThread(void *id) {
       sentence_length = 0;
       continue;
     }
+
+
   }
   fclose(fi);
   free(neu1);
