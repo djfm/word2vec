@@ -445,7 +445,7 @@ void InitNet() {
 // optionally discarding words according to the "sample" global parameter,
 // and returns the built sentence's length
 long long buildSentence(
-  long sen[MAX_SENTENCE_LENGTH + 1],
+  long long sen[MAX_SENTENCE_LENGTH + 1],
   FILE *fi,
   unsigned long long *next_random
 ) {
@@ -496,13 +496,11 @@ long long buildSentence(
 }
 
 void *TrainModelThread(void *id) {
-  long long a, b, d, cw, last_word, sentence_length = 0, sentence_position = 0;
+  long long sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
-  long long l1, l2, c, target, label, local_iter = iter;
+  long long local_iter = iter;
   unsigned long long next_random = (long long)id;
-  real f, g;
   clock_t now;
-
 
   // I believe these are used to store activations of neurons
   real *neu1 = (real *)calloc(layer1_size, sizeof(real));
@@ -552,137 +550,260 @@ void *TrainModelThread(void *id) {
       continue;
     }
 
-    long long word = sen[sentence_position];
+    long long centerWord = sen[sentence_position];
 
-    if (word == -1) {
+    if (centerWord == -1) {
       continue;
     }
 
-    for (c = 0; c < layer1_size; c++) {
+    for (long long c = 0; c < layer1_size; c++) {
+      // reset hidden layer activation for centerWord
       neu1[c] = 0;
-    }
-
-    for (c = 0; c < layer1_size; c++) {
+      // reset error for centerWord
       neu1e[c] = 0;
     }
 
     next_random = next_random * (unsigned long long)25214903917 + 11;
-    b = next_random % window;
+    long long b = next_random % window;
 
     if (cbow) {
       // train the cbow architecture
       // in -> hidden
-      cw = 0;
-      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-        c = sentence_position - window + a;
-        if (c < 0) continue;
-        if (c >= sentence_length) continue;
-        last_word = sen[c];
-        if (last_word == -1) continue;
-        for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + last_word * layer1_size];
-        cw++;
-      }
-      if (cw) {
-        for (c = 0; c < layer1_size; c++) neu1[c] /= cw;
-        if (hs) for (d = 0; d < vocab[word].codelen; d++) {
-          f = 0;
-          l2 = vocab[word].point[d] * layer1_size;
-          // Propagate hidden -> output
-          for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
-          if (f <= -MAX_EXP) continue;
-          else if (f >= MAX_EXP) continue;
-          else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-          // 'g' is the gradient multiplied by the learning rate
-          g = (1 - vocab[word].code[d] - f) * alpha;
-          // Propagate errors output -> hidden
-          for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-          // Learn weights hidden -> output
-          for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
-        }
-        // NEGATIVE SAMPLING
-        if (negative > 0) for (d = 0; d < negative + 1; d++) {
-          if (d == 0) {
-            target = word;
-            label = 1;
-          } else {
-            next_random = next_random * (unsigned long long)25214903917 + 11;
-            target = table[(next_random >> 16) % table_size];
-            if (target == 0) target = next_random % (vocab_size - 1) + 1;
-            if (target == word) continue;
-            label = 0;
+
+      // cw: context words count
+      long long cw = 0;
+
+      for (long long a = b; a < window * 2 + 1 - b; a++) {
+        // if this is not the central word
+        if (a != window) {
+          // pos is the context word index in the sentence
+          long long pos = sentence_position - window + a;
+
+          if (pos < 0) {
+            continue;
           }
-          l2 = target * layer1_size;
-          f = 0;
-          for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
-          if (f > MAX_EXP) g = (label - 1) * alpha;
-          else if (f < -MAX_EXP) g = (label - 0) * alpha;
-          else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-          for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+
+          if (pos >= sentence_length) {
+            continue;
+          }
+
+          if (sen[pos] == -1) {
+            continue;
+          }
+
+          // add to neu1 the embedding of the context word c
+          for (long long l = 0; l < layer1_size; l++) {
+            neu1[l] += syn0[sen[pos] * layer1_size + l];
+          }
+
+          cw++;
         }
+      }
+
+      // if there are words in the window
+      if (cw) {
+        // average the context embeddings that were summed into neu1
+        for (long long l = 0; l < layer1_size; l++) {
+          neu1[l] /= cw;
+        }
+
+        // Hierarchical Softmax, by default not used
+        if (hs) {
+          for (long long d = 0; d < vocab[centerWord].codelen; d++) {
+            real f = 0;
+            long long l2 = vocab[centerWord].point[d] * layer1_size;
+            // Propagate hidden -> output
+            for (long long c = 0; c < layer1_size; c++) f += neu1[c] * syn1[l2 + c];
+            if (f <= -MAX_EXP) continue;
+            else if (f >= MAX_EXP) continue;
+            else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+            // 'g' is the gradient multiplied by the learning rate
+            real g = (1 - vocab[centerWord].code[d] - f) * alpha;
+            // Propagate errors output -> hidden
+            for (long long c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[l2 + c];
+            // Learn weights hidden -> output
+            for (long long c = 0; c < layer1_size; c++) syn1[l2 + c] += g * neu1[c];
+          }
+        }
+
+        // Negative Sampling
+        if (negative > 0) {
+          long long target, label;
+
+          for (long long n = 0; n < negative + 1; n++) {
+            if (n == 0) {
+              target = centerWord;
+              label = 1;
+            } else {
+              next_random = next_random * (unsigned long long)25214903917 + 11;
+              target = table[(next_random >> 16) % table_size];
+
+              if (target == 0) {
+                target = next_random % (vocab_size - 1) + 1;
+              }
+
+              if (target == centerWord) {
+                continue;
+              }
+
+              label = 0;
+            }
+
+            long long tStart = target * layer1_size;
+
+            real f = 0, g;
+
+            // set f to be the scalar product of neu1 and the negative
+            // embeddings of the target word, in other words, a measure of
+            // the distance from the embedded context and the negative word
+            for (long long c = 0; c < layer1_size; c++) {
+              f += neu1[c] * syn1neg[tStart + c];
+            }
+
+            // set error to be an approximation of:
+            // error(f) = label - 1 / (1 + exp(-f)),
+
+            if (f > MAX_EXP) {
+              g = label - 1;
+            } else if (f < -MAX_EXP) {
+              g = label - 0;
+            } else {
+              g = label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+            }
+
+            for (long long c = 0; c < layer1_size; c++) {
+              neu1e[c] += syn1neg[tStart + c] * g * alpha;
+              syn1neg[tStart + c] += neu1[c] * g * alpha;
+            }
+          }
+        }
+
         // hidden -> in
-        for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-          c = sentence_position - window + a;
-          if (c < 0) continue;
-          if (c >= sentence_length) continue;
-          last_word = sen[c];
-          if (last_word == -1) continue;
-          for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
+        for (long long a = b; a < window * 2 + 1 - b; a++) {
+          if (a != window) {
+            long long c = sentence_position - window + a;
+
+            if (c < 0) {
+              continue;
+            }
+
+            if (c >= sentence_length) {
+              continue;
+            }
+
+            if (sen[c] == -1) {
+              continue;
+            }
+
+            for (long long l = 0; l < layer1_size; l++) {
+              syn0[sen[c] * layer1_size + l] += neu1e[c];
+            }
+          }
         }
       }
     } else {
       //train skip-gram
-      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-        c = sentence_position - window + a;
-        if (c < 0) continue;
-        if (c >= sentence_length) continue;
-        last_word = sen[c];
-        if (last_word == -1) continue;
-        l1 = last_word * layer1_size;
-        for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
-        // HIERARCHICAL SOFTMAX
-        if (hs) for (d = 0; d < vocab[word].codelen; d++) {
-          f = 0;
-          l2 = vocab[word].point[d] * layer1_size;
-          // Propagate hidden -> output
-          for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
-          if (f <= -MAX_EXP) continue;
-          else if (f >= MAX_EXP) continue;
-          else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-          // 'g' is the gradient multiplied by the learning rate
-          g = (1 - vocab[word].code[d] - f) * alpha;
-          // Propagate errors output -> hidden
-          for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-          // Learn weights hidden -> output
-          for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
-        }
-        // NEGATIVE SAMPLING
-        if (negative > 0) for (d = 0; d < negative + 1; d++) {
-          if (d == 0) {
-            target = word;
-            label = 1;
-          } else {
-            next_random = next_random * (unsigned long long)25214903917 + 11;
-            target = table[(next_random >> 16) % table_size];
-            if (target == 0) target = next_random % (vocab_size - 1) + 1;
-            if (target == word) continue;
-            label = 0;
-          }
-          l2 = target * layer1_size;
-          f = 0;
-          for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1neg[c + l2];
-          if (f > MAX_EXP) g = (label - 1) * alpha;
-          else if (f < -MAX_EXP) g = (label - 0) * alpha;
-          else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-          for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
-        }
-        // Learn weights input -> hidden
-        for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
-      }
+      for (long long a = b; a < window * 2 + 1 - b; a++) {
+        if (a != window) {
+          long long pos = sentence_position - window + a;
 
+          if (pos < 0) {
+            continue;
+          }
+
+          if (pos >= sentence_length) {
+            continue;
+          }
+
+          if (sen[pos] == -1) {
+            continue;
+          }
+
+          long long cStart = sen[pos] * layer1_size;
+
+          for (long long l = 0; l < layer1_size; l++) {
+            // reset error for context word
+            neu1e[l] = 0;
+          }
+
+          // Hierarchical Softmax
+          if (hs) {
+            for (long long d = 0; d < vocab[centerWord].codelen; d++) {
+              real f = 0;
+              long long l2 = vocab[centerWord].point[d] * layer1_size;
+              // Propagate hidden -> output
+              for (long long l = 0; l < layer1_size; l++) f += syn0[cStart + l] * syn1[l2 + l];
+              if (f <= -MAX_EXP) continue;
+              else if (f >= MAX_EXP) continue;
+              else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+              // 'g' is the gradient multiplied by the learning rate
+              real g = (1 - vocab[centerWord].code[d] - f) * alpha;
+              for (pos = 0; pos < layer1_size; pos++) {
+                // Propagate errors output -> hidden
+                neu1e[pos] += g * syn1[l2 + pos];
+                // Learn weights hidden -> output
+                syn1[l2 + pos] += g * syn0[cStart + pos];
+              }
+            }
+          }
+
+          // Negative Sampling
+          if (negative > 0) {
+            for (long long d = 0; d < negative + 1; d++) {
+              long long target, label;
+
+              if (d == 0) {
+                target = centerWord;
+                label = 1;
+              } else {
+                next_random = next_random * (unsigned long long)25214903917 + 11;
+                target = table[(next_random >> 16) % table_size];
+
+                if (target == 0) {
+                  target = next_random % (vocab_size - 1) + 1;
+                }
+
+                if (target == centerWord) {
+                  continue;
+                }
+
+                label = 0;
+              }
+
+              long long tStart = target * layer1_size;
+              real f = 0, g;
+
+              for (long long c = 0; c < layer1_size; c++) {
+                f += syn0[cStart + c] * syn1neg[tStart + c];
+              }
+
+              if (f > MAX_EXP) {
+                g = (label - 1) * alpha;
+              }
+              else if (f < -MAX_EXP) {
+                g = (label - 0) * alpha;
+              }
+              else {
+                g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+              }
+
+              for (long long c = 0; c < layer1_size; c++) {
+                neu1e[c] += syn1neg[tStart + c] * alpha * g;
+                syn1neg[tStart + c] += syn0[cStart + c] * alpha * g;
+              }
+            }
+          }
+
+          // Learn weights input -> hidden
+          for (long long c = 0; c < layer1_size; c++) {
+            syn0[cStart + c] += neu1e[c];
+          }
+        }
+      }
     }
+
     sentence_position++;
+
     if (sentence_position >= sentence_length) {
       sentence_length = 0;
       continue;

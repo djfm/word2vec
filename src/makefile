@@ -5,7 +5,7 @@ BIN_DIR=../bin
 
 CC = gcc
 #Using -Ofast instead of -O3 might result in faster code, but is supported only by newer GCC versions
-CFLAGS = -lm -pthread -march=native -Wall -funroll-loops -Wno-unused-result
+CFLAGS = -lm -pthread -march=native -Wall -funroll-loops -Wno-unused-result -Wshadow
 
 ifeq ($(debug), 1)
 	CFLAGS += -g -Og
