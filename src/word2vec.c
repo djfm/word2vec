@@ -554,7 +554,9 @@ void *TrainModelThread(void *id) {
 
     next_random = next_random * (unsigned long long)25214903917 + 11;
     b = next_random % window;
-    if (cbow) {  //train the cbow architecture
+
+    if (cbow) {
+      // train the cbow architecture
       // in -> hidden
       cw = 0;
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -614,7 +616,8 @@ void *TrainModelThread(void *id) {
           for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
       }
-    } else {  //train skip-gram
+    } else {
+      //train skip-gram
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
         c = sentence_position - window + a;
         if (c < 0) continue;
@@ -663,23 +666,24 @@ void *TrainModelThread(void *id) {
         // Learn weights input -> hidden
         for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
       }
+
     }
     sentence_position++;
     if (sentence_position >= sentence_length) {
       sentence_length = 0;
       continue;
     }
-
-
   }
+
   fclose(fi);
   free(neu1);
   free(neu1e);
-#ifdef _MSC_VER
-_endthreadex(0);
-#elif defined  linux
-  pthread_exit(NULL);
-#endif
+
+  #ifdef _MSC_VER
+    _endthreadex(0);
+  #elif defined  linux
+    pthread_exit(NULL);
+  #endif
 }
 
 #ifdef _MSC_VER
