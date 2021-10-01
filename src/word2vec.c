@@ -778,13 +778,11 @@ void *TrainModelThread(void *id) {
               }
 
               if (f > MAX_EXP) {
-                g = (label - 1) * alpha;
-              }
-              else if (f < -MAX_EXP) {
-                g = (label - 0) * alpha;
-              }
-              else {
-                g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+                g = label - 1;
+              } else if (f < -MAX_EXP) {
+                g = label - 0;
+              } else {
+                g = label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
               }
 
               for (long long c = 0; c < layer1_size; c++) {
