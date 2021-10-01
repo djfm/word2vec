@@ -18,6 +18,7 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#include <fenv.h>
 #endif
 
 #include <stdio.h>
@@ -660,15 +661,16 @@ void *TrainModelThread(void *id) {
               f += neu1[c] * syn1neg[tStart + c];
             }
 
-            // set error to be an approximation of:
-            // error(f) = label - 1 / (1 + exp(-f)),
+            // set g to be an approximation of:
+            // g(f) = label - 1 / (1 + exp(-f))
 
             if (f > MAX_EXP) {
               g = label - 1;
             } else if (f < -MAX_EXP) {
               g = label - 0;
             } else {
-              g = label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+              int x = (f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2);
+              g = label - expTable[x];
             }
 
             for (long long c = 0; c < layer1_size; c++) {
@@ -1014,6 +1016,11 @@ int main(int argc, char **argv) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
     expTable[i] = expTable[i] / (expTable[i] + 1);                   // Precompute f(x) = x / (x + 1)
   }
+
+  #ifdef linux
+    feenableexcept(FE_DIVBYZERO | FE_OVERFLOW);
+  #endif
+
   TrainModel();
   return 0;
 }
