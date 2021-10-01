@@ -19,6 +19,7 @@
 #else
 #include <pthread.h>
 #include <fenv.h>
+#include <signal.h>
 #endif
 
 #include <stdio.h>
@@ -675,6 +676,9 @@ void *TrainModelThread(void *id) {
 
             for (long long c = 0; c < layer1_size; c++) {
               neu1e[c] += syn1neg[tStart + c] * g * alpha;
+            }
+
+            for (long long c = 0; c < layer1_size; c++) {
               syn1neg[tStart + c] += neu1[c] * g * alpha;
             }
           }
@@ -698,7 +702,7 @@ void *TrainModelThread(void *id) {
             }
 
             for (long long l = 0; l < layer1_size; l++) {
-              syn0[sen[c] * layer1_size + l] += neu1e[c];
+              syn0[sen[c] * layer1_size + l] += neu1e[l];
             }
           }
         }
@@ -740,10 +744,14 @@ void *TrainModelThread(void *id) {
               else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
               // 'g' is the gradient multiplied by the learning rate
               real g = (1 - vocab[centerWord].code[d] - f) * alpha;
+
+              // Propagate errors output -> hidden
               for (pos = 0; pos < layer1_size; pos++) {
-                // Propagate errors output -> hidden
                 neu1e[pos] += g * syn1[l2 + pos];
-                // Learn weights hidden -> output
+              }
+
+              // Learn weights hidden -> output
+              for (pos = 0; pos < layer1_size; pos++) {
                 syn1[l2 + pos] += g * syn0[cStart + pos];
               }
             }
@@ -789,6 +797,9 @@ void *TrainModelThread(void *id) {
 
               for (long long c = 0; c < layer1_size; c++) {
                 neu1e[c] += syn1neg[tStart + c] * alpha * g;
+              }
+
+              for (long long c = 0; c < layer1_size; c++) {
                 syn1neg[tStart + c] += syn0[cStart + c] * alpha * g;
               }
             }
