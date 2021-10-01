@@ -3,6 +3,9 @@ DATA_DIR=./data
 BIN_DIR=./bin
 SRC_DIR=./src
 
+build:
+	+make -C $(SRC_DIR)
+
 clean:
 	rm -f $(DATA_DIR)/vectors-phrase
 	rm -f $(DATA_DIR)/vectors-phrase.bin
@@ -13,6 +16,3 @@ clean:
 veryclean: clean
 	rm -f $(DATA_DIR)/news.2012.en.shuffled
 	rm -f $(DATA_DIR)/news.2012.en.shuffled.gz
-
-build:
-	pushd ${SRC_DIR} && make; popd
