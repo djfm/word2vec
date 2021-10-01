@@ -441,6 +441,60 @@ void InitNet() {
   CreateBinaryTree();
 }
 
+// build a sentence composed of word indices extracted from the file fi,
+// optionally discarding words according to the "sample" global parameter,
+// and returns the built sentence's length
+long long buildSentence(
+  long sen[MAX_SENTENCE_LENGTH + 1],
+  FILE *fi,
+  unsigned long long *next_random
+) {
+  long long sentence_length = 0;
+
+  while (1) {
+    long long word = ReadWordIndex(fi);
+
+    if (feof(fi)) {
+      // end of file, note that this check is useless
+      // because word will be -1 in this case
+      break;
+    }
+
+    if (word == -1) {
+      // word not in vocabulary
+      continue;
+    }
+
+    if (word == 0) {
+      // sentence end, i.e. special delimiter "</s>"
+      // encountered, inserted in place of newlines
+      // in the input file
+      break;
+    }
+
+    // The subsampling randomly discards frequent words
+    // while keeping the ranking same - this is the -sample command line arg,
+    // and defaults to 0.001
+    if (sample > 0) {
+      real f = vocab[word].cn / (sample * train_words);
+      real ran = (sqrt(f) + 1) / f;
+      *next_random = *next_random * (unsigned long long)25214903917 + 11;
+      if (ran < (*next_random & 0xFFFF) / (real)0x10000) {
+        continue;
+      }
+    }
+
+    sen[sentence_length] = word;
+    sentence_length++;
+
+    if (sentence_length >= MAX_SENTENCE_LENGTH) {
+      break;
+    }
+  }
+
+  return sentence_length;
+}
+
 void *TrainModelThread(void *id) {
   long long a, b, d, cw, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
@@ -476,48 +530,8 @@ void *TrainModelThread(void *id) {
 
     // build a sentence
     if (sentence_length == 0) {
-      while (1) {
-        long long word = ReadWordIndex(fi);
-
-        if (feof(fi)) {
-          // end of file, note that this check is useless
-          // because word will be -1 in this case
-          break;
-        }
-
-        if (word == -1) {
-          // word not in vocabulary
-          continue;
-        }
-
-        word_count++;
-
-        if (word == 0) {
-          // sentence end, i.e. special delimiter "</s>"
-          // encountered, inserted in place of newlines
-          // in the input file
-          break;
-        }
-
-        // The subsampling randomly discards frequent words
-        // while keeping the ranking same - this is the -sample command line arg,
-        // and defaults to 0.001
-        if (sample > 0) {
-          real f = vocab[word].cn / (sample * train_words);
-          real ran = (sqrt(f) + 1) / f;
-          next_random = next_random * (unsigned long long)25214903917 + 11;
-          if (ran < (next_random & 0xFFFF) / (real)0x10000) {
-            continue;
-          }
-        }
-
-        sen[sentence_length] = word;
-        sentence_length++;
-
-        if (sentence_length >= MAX_SENTENCE_LENGTH) {
-          break;
-        }
-      }
+      sentence_length = buildSentence(sen, fi, &next_random);
+      word_count += sentence_length;
       sentence_position = 0;
     }
 
